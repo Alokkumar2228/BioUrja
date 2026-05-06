@@ -24,12 +24,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<"admin" | "operator" | null>(null);
 
   useEffect(() => {
-    // Set up listener FIRST (per Lovable Cloud auth pattern)
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
-        // Defer extra calls to avoid deadlock
         setTimeout(() => loadExtras(sess.user.id), 0);
       } else {
         setProfileName("");

@@ -7,6 +7,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -15,8 +20,8 @@ Deno.serve(async (req) => {
     if (!authHeader) return json({ error: "Unauthorized" }, 401);
 
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
+      Deno.env.get("PROJECT_URL")!,
+      Deno.env.get("SERVICE_ROLE_KEY")!,
       { global: { headers: { Authorization: authHeader } } },
     );
     const { data: { user } } = await supabase.auth.getUser();
@@ -30,26 +35,12 @@ Deno.serve(async (req) => {
       .select("date, biogas_m3, methane_m3, kwh, lpg_cylinders, rupee_savings, co2_avoided")
       .eq("user_id", user.id)
       .order("date", { ascending: false })
-      .limit(7);
+      .limit(3);
 
-    const systemPrompt = `You are BiogasIQ, an expert biogas plant advisor
-     embedded in a campus waste-to-energy management system. The plant serves 
-     1,800 students and processes 
-    organic waste via anaerobic digestion.
-
-Plant targets:
-- Daily input: 720 kg/day
-- Volatile solids: 540 kg VS/day
-- Biogas yield: 351 m³/day
-- Methane: 210.6 m³/day (60% content)
-- Energy: 210.6 kWh/day
-- LPG equivalent: 8.6 cylinders/day
-- Daily savings: ₹16,206
-
-Last 7 days actual readings:
-${JSON.stringify(recent ?? [], null, 2)}
-
-Answer questions about plant performance, troubleshooting low yield, optimizing digester conditions, sustainability impact, and cost savings. Be concise, technical, and practical. Use markdown for formatting.`;
+    const systemPrompt = `You are BiogasIQ, a biogas plant advisor.
+Plant targets: 720 kg/day input, 351 m3/day biogas, 60% methane, 210.6 kWh/day, 8.6 LPG/day, Rs 16206/day savings.
+Last 3 days readings: ${JSON.stringify(recent ?? [])}
+Respond concisely with practical troubleshooting and performance advice. Use markdown.`;
 
     // Save user message
     const userMsg = messages[messages.length - 1];
@@ -57,20 +48,26 @@ Answer questions about plant performance, troubleshooting low yield, optimizing 
       await supabase.from("chat_history").insert({
         user_id: user.id, role: "user", content: userMsg.content,
       });
-    }
+    } 
 
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
+    const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) return json({ error: "AI not configured" }, 500);
-    const aiGatewayUrl = Deno.env.get("AI_GATEWAY_URL");
-    if (!aiGatewayUrl) return json({ error: "AI gateway URL not configured" }, 500);
+    const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.5-flash";
 
-    const aiResp = await fetch(aiGatewayUrl, {
+    const geminiContents = (messages as ChatMessage[])
+      .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
+    const aiResp = await fetch(geminiUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
-        stream: true,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: geminiContents,
       }),
     });
 
@@ -78,37 +75,42 @@ Answer questions about plant performance, troubleshooting low yield, optimizing 
       if (aiResp.status === 429) return json({ error: "Rate limited" }, 429);
       if (aiResp.status === 402) return json({ error: "Credits exhausted" }, 402);
       const t = await aiResp.text();
-      console.error("AI gateway", aiResp.status, t);
-      return json({ error: "AI gateway error" }, 500);
+      console.error("Gemini API", aiResp.status, t);
+      return json({ error: "Gemini API error" }, 500);
     }
 
-    // Tee the stream: forward to client + accumulate to save assistant reply
+    // Convert Gemini SSE chunks to OpenAI-like SSE format expected by frontend.
     let assistantText = "";
     const stream = new ReadableStream({
       async start(controller) {
         const reader = aiResp.body!.getReader();
         const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
         let buf = "";
         try {
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-            controller.enqueue(value);
             buf += decoder.decode(value, { stream: true });
             let nl;
             while ((nl = buf.indexOf("\n")) !== -1) {
               let line = buf.slice(0, nl); buf = buf.slice(nl + 1);
               if (line.endsWith("\r")) line = line.slice(0, -1);
               if (!line.startsWith("data: ")) continue;
-              const json = line.slice(6).trim();
-              if (json === "[DONE]") continue;
+              const jsonChunk = line.slice(6).trim();
+              if (!jsonChunk || jsonChunk === "[DONE]") continue;
               try {
-                const p = JSON.parse(json);
-                const c = p.choices?.[0]?.delta?.content;
-                if (c) assistantText += c;
+                const p = JSON.parse(jsonChunk);
+                const c = p.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (typeof c === "string" && c.length > 0) {
+                  assistantText += c;
+                  const out = `data: ${JSON.stringify({ choices: [{ delta: { content: c } }] })}\n\n`;
+                  controller.enqueue(encoder.encode(out));
+                }
               } catch { /* partial */ }
             }
           }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         } finally {
           controller.close();
           if (assistantText) {
