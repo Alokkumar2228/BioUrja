@@ -2,13 +2,26 @@
 
 <img src="https://img.shields.io/badge/BioUrja-AI%20Biogas%20Analytics-22c55e?style=for-the-badge&logo=leaf&logoColor=white" alt="BioUrja Banner" />
 
-# 🌿 BioUrja
+# 🌿 BioUrja — BiogasIQ
 
 ### AI-Powered Waste-to-Biogas Analytics Platform
 
 **Real-time plant performance monitoring · AI-driven insights · Anomaly detection**
 
-[🚀 Live Demo](https://biourja.onrender.com/) · [📖 Documentation](#-installation--setup) · [🐛 Issues](https://github.com/Alokkumar2228/BioUrja/issues) · [⭐ Star this Repo](https://github.com/Alokkumar2228/BioUrja)
+<br/>
+
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E?style=flat-square&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Gemini](https://img.shields.io/badge/Google%20Gemini-AI-4285F4?style=flat-square&logo=google&logoColor=white)](https://ai.google.dev/)
+[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square)](https://github.com/Alokkumar2228/BioUrja/pulls)
+
+<br/>
+
+[🚀 Live Demo](#-live-demo--deployment) · [📖 Documentation](#-installation--setup) · [🐛 Issues](https://github.com/Alokkumar2228/BioUrja/issues) · [⭐ Star this Repo](https://github.com/Alokkumar2228/BioUrja)
 
 </div>
 
@@ -158,22 +171,22 @@ This is a **portfolio-grade full-stack reference project** demonstrating:
 
 ```mermaid
 flowchart TB
-  subgraph Client["🌐 Browser — React SPA (Vite)"]
-    UI[Dashboard · Waste Logger · Advisor · Reports]
+  subgraph Client["Browser — React SPA on Vite"]
+    UI[Dashboard / Waste Logger / Advisor / Reports]
     RQ[TanStack Query]
-    SB_CLIENT[@supabase-js client]
+    SB_CLIENT[supabase-js Client]
   end
 
-  subgraph Supabase["☁️ Supabase Cloud"]
-    AUTH[Auth — JWT]
+  subgraph Supabase["Supabase Cloud"]
+    AUTH[Auth - JWT]
     PG[(PostgreSQL + RLS)]
-    EF[Edge Functions — Deno]
+    EF[Edge Functions - Deno]
   end
 
-  subgraph External["🔌 External Services"]
-    GEMINI[Google Gemini API — SSE]
+  subgraph External["External Services"]
+    GEMINI[Google Gemini API - SSE]
     EMAIL[Transactional Email]
-    PDF[pdf-lib — Report Generator]
+    PDF[pdf-lib Report Generator]
   end
 
   UI --> RQ
@@ -194,19 +207,19 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-  participant U as 👤 User
+  participant U as User
   participant App as React App
   participant Auth as Supabase Auth
-  participant API as PostgREST / Client
-  participant DB as PostgreSQL + RLS
+  participant API as PostgREST Client
+  participant DB as PostgreSQL with RLS
 
-  U->>App: Sign in / Sign up (email)
+  U->>App: Sign in or Sign up via email
   App->>Auth: Authenticate credentials
   Auth-->>App: JWT access_token + refresh_token
   App->>API: Queries with anon key + user JWT
   API->>DB: auth.uid() enforced in RLS policies
-  DB-->>App: Only rows permitted for that user (or admin)
-  Note over App,DB: Roles: operator (default) | admin (cross-user read)
+  DB-->>App: Only rows permitted for that user or admin
+  Note over App,DB: Roles: operator (default) or admin (cross-user read)
 ```
 
 ---
@@ -215,18 +228,18 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant UI as 💬 Advisor Page
-  participant Fn as ⚡ Edge Function (ai-chat)
-  participant DB as biogas_readings / chat_history
-  participant G as 🤖 Gemini SSE
+  participant UI as Advisor Page
+  participant Fn as Edge Function ai-chat
+  participant DB as biogas_readings and chat_history
+  participant G as Gemini SSE
 
-  UI->>Fn: POST { messages } + Authorization JWT
+  UI->>Fn: POST messages + Authorization JWT
   Fn->>DB: Fetch last 3 readings for context grounding
   Fn->>DB: Persist user message to chat_history
-  Fn->>G: streamGenerateContent (SSE) with system prompt
+  Fn->>G: streamGenerateContent via SSE with system prompt
   loop Streaming Chunks
-    G-->>Fn: SSE data lines (delta tokens)
-    Fn-->>UI: Normalized SSE (OpenAI-style deltas)
+    G-->>Fn: SSE data lines with delta tokens
+    Fn-->>UI: Normalized SSE in OpenAI-style deltas
   end
   Fn->>DB: Persist full assistant reply to chat_history
   UI->>UI: Render markdown response incrementally
@@ -238,14 +251,15 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  CRON[🕒 pg_cron / Manual Trigger — Daily 23:00] --> YIELD[⚡ yield-alert Edge Function]
-  YIELD --> READ[(📊 biogas_readings — last 7 days)]
-  YIELD --> RULE{📉 Today < 85% of rolling avg?}
-  RULE -->|✅ Yes — Anomaly detected| MAIL[📧 HTML Email Alert via send-transactional-email]
-  RULE -->|❌ No — Within threshold| OK[✓ No alert sent]
-  UIWARN[🔔 Dashboard Banner — Client-side check] --> READ
-  Note1[">15% drop triggers both UI banner AND scheduled email"]
+  CRON[pg_cron or Manual Trigger - Daily at 23:00] --> YIELD[yield-alert Edge Function]
+  YIELD --> READ[(biogas_readings - last 7 days)]
+  YIELD --> RULE{Today less than 85% of rolling avg?}
+  RULE -->|Yes - Anomaly detected| MAIL[HTML Email Alert via send-transactional-email]
+  RULE -->|No - Within threshold| OK[No alert sent]
+  UIWARN[Dashboard Banner - Client-side check] --> READ
 ```
+
+> 💡 A drop of more than 15% triggers both the UI banner and the scheduled email alert.
 
 ---
 
